@@ -13,6 +13,7 @@ const Native: Any =
 const stub = {
   capabilities: async () => ({ tier: 'none', canNameHotspot: false, canBlockGuests: false, rootAvailable: false, shizukuGranted: false, sdkInt: 0 }),
   runCommand: async (c: string) => ({ code: 126, out: 'unavailable' }),
+  requestShizuku: async () => ({ ok: false, reason: 'unavailable' }),
   portalStart: async () => ({ ok: false, error: 'unavailable' }),
   portalStop: async () => ({ ok: true }),
   portalStatus: async () => ({ running: false, port: 8080 }),

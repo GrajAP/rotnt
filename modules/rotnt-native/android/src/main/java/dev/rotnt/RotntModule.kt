@@ -3,6 +3,7 @@ package dev.rotnt
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
+import rikka.shizuku.Shizuku
 
 class RotntModule : Module() {
 
@@ -30,6 +31,23 @@ class RotntModule : Module() {
     AsyncFunction("runCommand") { command: String ->
       val (code, out) = Privs.exec(command)
       mapOf("code" to code, "out" to out)
+    }
+
+    // Shizuku only shows its permission dialog when asked from an Activity, and
+    // it is a separate one-time grant the user has to confirm.
+    AsyncFunction("requestShizuku") {
+      val activity = appContext.currentActivity
+        ?: return@AsyncFunction mapOf("ok" to false, "reason" to "brak aktywnosci")
+      try {
+        Shizuku.requestPermission(0)
+        mapOf("ok" to true, "granted" to Privs.shizukuGranted())
+      } catch (t: Throwable) {
+        mapOf(
+          "ok" to false,
+          "reason" to (t.message ?: "Shizuku nie jest zainstalowane albo nieuzwolnione"),
+          "ping" to Privs.shizukuGranted()
+        )
+      }
     }
 
     // --- portal -----------------------------------------------------------

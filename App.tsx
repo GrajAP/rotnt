@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Rotnt, capabilities, isAvailable } from './src/native';
+import { ensureHotspotPermissions } from './src/permissions';
 import {
   DEFAULT_INSTALL_URL,
   DEFAULT_PASSPHRASE,
@@ -38,6 +39,8 @@ export default function App() {
   const [hits, setHits] = useState<Record<string, number>>({});
   const [log, setLog] = useState<Log[]>([]);
   const [hotspotNote, setHotspotNote] = useState<string | null>(null);
+  const [permsGranted, setPermsGranted] = useState<boolean | null>(null);
+  const [shizukuBusy, setShizukuBusy] = useState(false);
 
   let logId = useMemo(() => ({ n: 0 }), []);
 
@@ -102,6 +105,12 @@ export default function App() {
       setPortalUp(!!portal?.ok);
       say(portal?.ok ? `portal slucha na 8080` : `portal: ${portal?.error ?? 'blad'}`, !portal?.ok);
 
+      const perms = await ensureHotspotPermissions();
+      setPermsGranted(perms.granted);
+      if (perms.denied.length > 0) {
+        say('bez uprawnienia do Wi-Fi nie zmienie nazwy sieci', true);
+      }
+
       // T1/T2: we name and own the network. T0: local-only, no internet.
       if (c.canNameHotspot) {
         const hs: any = await Rotnt.hotspotStartViaShell(ssid, pass);
@@ -116,7 +125,7 @@ export default function App() {
             ? 'Uwaga: tryb shell nie wlacza udostepniania internetu. Dziala, gdy telefon sam jest na Wi-Fi.'
             : null
         );
-      } else {
+      } else if (perms.granted) {
         try {
           const loh: any = await Rotnt.hotspotStartLocalOnly(ssid, pass);
           say(`hotspot local-only: ${loh?.ssid ?? 'uruchomiony'}`);
@@ -127,6 +136,8 @@ export default function App() {
           say(`local-only hotspot odrzucony: ${e?.message ?? e}`, true);
           setHotspotNote(null);
         }
+      } else {
+        say('pomijam naziwywanie sieci: brak uprawnienia Wi-Fi', true);
       }
 
       if (c.canBlockGuests) {
@@ -146,6 +157,30 @@ export default function App() {
       setOn(true);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function askShizuku() {
+    setShizukuBusy(true);
+    try {
+      const res: any = await Rotnt.requestShizuku();
+      if (!res?.ok) {
+        say(`Shizuku: ${res?.reason ?? 'blad'}`, true);
+        return;
+      }
+      // The dialog is asynchronous; give the user a moment to answer it.
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const c = await capabilities();
+        if (c.shizukuGranted) {
+          setCaps(c);
+          say('Shizuku przyznane: rotnt moze nadawac nazwe sieci');
+          return;
+        }
+      }
+      say('Shizuku nadal nieprzyznane - odrzucono dialog?', true);
+    } finally {
+      setShizukuBusy(false);
     }
   }
 
@@ -241,6 +276,26 @@ export default function App() {
             </View>
           )}
         </Section>
+
+        {tier === 'none' && !permsGranted && (
+          <Section title="Tryb T1 (Shizuku)">
+            <Text style={s.hint}>
+              Shizuku pozwala rotnt nadawac wlasna nazwe twojej sieci hotspotu, bez roota.
+              Zainstaluj Shizuku, uruchom go przez wireless debugging, a potem nacisnij.
+            </Text>
+            <Pressable
+              onPress={askShizuku}
+              disabled={shizukuBusy}
+              style={({ pressed }) => [s.smallBtn, pressed && { opacity: 0.8 }, shizukuBusy && { opacity: 0.6 }]}
+            >
+              {shizukuBusy ? (
+                <ActivityIndicator color="#e6edf3" />
+              ) : (
+                <Text style={s.smallBtnText}>popros Shizuku o uprawnienia</Text>
+              )}
+            </Pressable>
+          </Section>
+        )}
 
         <Section title="Reguly">
           {RULES.map((r) => (
@@ -418,6 +473,16 @@ const s = StyleSheet.create({
   ruleMarkOn: { color: '#3fb950' },
   ruleName: { color: '#e6edf3', fontSize: 14, fontWeight: '600', flex: 1 },
   ruleWhy: { color: '#6e7681', fontSize: 12, maxWidth: '50%', textAlign: 'right' },
+  smallBtn: {
+    marginTop: 14,
+    backgroundColor: '#21262d',
+    borderWidth: 1,
+    borderColor: '#30363d',
+    borderRadius: 8,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  smallBtnText: { color: '#e6edf3', fontSize: 14, fontWeight: '600' },
   log: { backgroundColor: '#0d1117', borderRadius: 8, padding: 12 },
   logLine: {
     color: '#8b949e',
