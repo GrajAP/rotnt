@@ -12,11 +12,17 @@
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   },
+  "description": "Hotspot z zasadami. Informuje zamiast blokowac, blokowac gdy moze.",
+  "license": "MIT",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "prebuild": "expo prebuild --platform android --no-install",
+    "patch-signing": "node scripts/patch-signing.mjs",
+    "typecheck": "tsc --noEmit"
   },
-  "private": true
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GrajAP/rotnt.git"
+  }
 }

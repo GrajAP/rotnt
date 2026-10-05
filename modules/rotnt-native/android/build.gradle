@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'dev.rotnt'
+version = '1.0.0'
+
+android {
+  namespace "dev.rotnt.core"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  implementation 'dev.rikka.shizuku:api:13.1.5'
+  implementation 'dev.rikka.shizuku:provider:13.1.5'
+}

@@ -1,0 +1,87 @@
+name: android apk
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag for the GitHub release (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      - name: Generate native project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Wire up release signing and ABI splits
+        run: node scripts/patch-signing.mjs
+
+      - name: Restore signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ROTNT_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "::error::secret ROTNT_KEYSTORE_B64 is not set"; exit 1; }
+          printf '%s' "$KEYSTORE_B64" | base64 -d > android/app/rotnt.keystore
+          ls -l android/app/rotnt.keystore
+
+      - name: Assemble release APKs
+        env:
+          ORG_GRADLE_PROJECT_ROTNT_STORE_FILE: rotnt.keystore
+          ORG_GRADLE_PROJECT_ROTNT_KEY_ALIAS: ${{ secrets.ROTNT_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_ROTNT_STORE_PASSWORD: ${{ secrets.ROTNT_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_ROTNT_KEY_PASSWORD: ${{ secrets.ROTNT_KEY_PASSWORD }}
+        run: |
+          cd android
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+          ls -la app/build/outputs/apk/release/
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
+          files: |
+            android/app/build/outputs/apk/release/app-universal-release.apk#rotnt.apk
+            android/app/build/outputs/apk/release/app-arm64-v8a-release.apk#rotnt-arm64.apk
+          fail_on_unmatched_files: true
+          body: |
+            ## rotn't
+
+            Pobierz `rotnt.apk` (uniwersalny) albo `rotnt-arm64.apk` (mniejszy, na większości telefonów).
+
+            ```
+            https://github.com/GrajAP/rotnt/releases/latest/download/rotnt.apk
+            ```
+
+            APK jest podpisany kluczem spoza repo. Nie jest w sklepie, bo rotn't
+            prosi o uprawnienia, które sklepy Google Play odrzucają.
+
+            Tryb pracy zależy od tego, co telefon potrafi:
+            - **T0** bez uprawnień: nazwa sieci + strona powitalna na 8080
+            - **T1** Shizuku: rotnt przejmuje nazwę twojej sieci
+            - **T2** Magisk: pełna bariera DNS dla gości hotspota

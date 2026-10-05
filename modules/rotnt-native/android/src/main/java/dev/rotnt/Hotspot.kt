@@ -1,0 +1,76 @@
+package dev.rotnt
+
+import android.content.Context
+import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+
+object Hotspot {
+
+  /**
+   * T1 path. `cmd wifi start-softap` runs as shell uid, so with Shizuku we own
+   * the network name without root. Note it does not enable tethering itself:
+   * internet only flows if the phone already has an upstream Wi-Fi association.
+   */
+  fun startViaShell(ssid: String, passphrase: String): Pair<Int, String> {
+    val security = if (passphrase.isBlank()) "open" else "wpa2"
+    val pass = if (passphrase.isBlank()) "" else " '${passphrase.replace("'", "'\\''")}'"
+    return Privs.exec("cmd wifi start-softap '${ssid.replace("'", "'\\''")}' $security$pass")
+  }
+
+  fun stopViaShell(): Pair<Int, String> = Privs.exec("cmd wifi stop-softap")
+
+  /**
+   * T0 path. Pure public API, works on any phone, but local-only: guests can
+   * reach this device and nothing else.
+   */
+  fun startLocalOnly(
+    context: Context,
+    ssid: String,
+    passphrase: String,
+    onReady: (Map<String, Any?>) -> Unit,
+    onFail: (String) -> Unit
+  ) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      onFail("local-only hotspot wymaga Androida 11+")
+      return
+    }
+    val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    val handler = Handler(Looper.getMainLooper())
+
+    val callback = object : WifiManager.LocalOnlyHotspotCallback() {
+      override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
+        onReady(mapOf("ssid" to ssid, "iface" to "wlan0 (local-only)"))
+      }
+
+      override fun onFailed(reason: Int) {
+        onFail(describe(reason))
+      }
+    }
+
+    wifi.startLocalOnlyHotspot(callback, handler)
+  }
+
+  private fun describe(reason: Int): String = when (reason) {
+    WifiManager.LocalOnlyHotspotCallback.ERROR_NO_CHANNEL -> "brak wolnego kanału Wi-Fi"
+    WifiManager.LocalOnlyHotspotCallback.ERROR_GENERIC -> "błąd systemu przy starcie hotspotu"
+    WifiManager.LocalOnlyHotspotCallback.ERROR_INCOMPATIBLE_MODE -> "tryb jest niekompatybilny (wyłącz lokalny hotspot w Ustawieniach)"
+    WifiManager.LocalOnlyHotspotCallback.ERROR_TETHERING_DISALLOWED -> "system blokuje tethering dla tej aplikacji"
+    else -> "nieznany błąd: $reason"
+  }
+
+  fun status(): Map<String, Any?> {
+    val (code, out) = Privs.exec("cmd wifi status 2>/dev/null; echo ---; ip -o -4 addr show 2>/dev/null")
+    val softapRunning = out.contains("SoftAp", ignoreCase = true) ||
+      out.contains("Wi-Fi Direct", ignoreCase = true)
+    val iface = if (code == 0) Blocker.hotspotInterface() else null
+    return mapOf(
+      "shellStatusCode" to code,
+      "softapHint" to softapRunning,
+      "hotspotInterface" to iface?.name,
+      "hotspotAddress" to iface?.address,
+      "raw" to out.take(2000)
+    )
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "name": "Rotnt",
+    "modules": ["dev.rotnt.RotntModule"]
+  }
+}
