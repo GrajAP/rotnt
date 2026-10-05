@@ -17,14 +17,14 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -45,7 +45,6 @@ jobs:
         run: |
           test -n "$KEYSTORE_B64" || { echo "::error::secret ROTNT_KEYSTORE_B64 is not set"; exit 1; }
           printf '%s' "$KEYSTORE_B64" | base64 -d > android/app/rotnt.keystore
-          ls -l android/app/rotnt.keystore
 
       - name: Assemble release APKs
         env:
@@ -55,33 +54,25 @@ jobs:
           ORG_GRADLE_PROJECT_ROTNT_KEY_PASSWORD: ${{ secrets.ROTNT_KEY_PASSWORD }}
         run: |
           cd android
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace
-          ls -la app/build/outputs/apk/release/
+          ./gradlew :app:assembleRelease --no-daemon
+          ls -la app/build/outputs/apk/release/*.apk
 
+      # gh handles the "file#asset-name" syntax; softprops/action-gh-release
+      # does not, and silently matches nothing against the '#'.
       - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ${{ github.event.inputs.tag || github.ref_name }}
-          draft: false
-          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
-          files: |
-            android/app/build/outputs/apk/release/app-universal-release.apk#rotnt.apk
-            android/app/build/outputs/apk/release/app-arm64-v8a-release.apk#rotnt-arm64.apk
-          fail_on_unmatched_files: true
-          body: |
-            ## rotn't
-
-            Pobierz `rotnt.apk` (uniwersalny) albo `rotnt-arm64.apk` (mniejszy, na większości telefonów).
-
-            ```
-            https://github.com/GrajAP/rotnt/releases/latest/download/rotnt.apk
-            ```
-
-            APK jest podpisany kluczem spoza repo. Nie jest w sklepie, bo rotn't
-            prosi o uprawnienia, które sklepy Google Play odrzucają.
-
-            Tryb pracy zależy od tego, co telefon potrafi:
-            - **T0** bez uprawnień: nazwa sieci + strona powitalna na 8080
-            - **T1** Shizuku: rotnt przejmuje nazwę twojej sieci
-            - **T2** Magisk: pełna bariera DNS dla gości hotspota
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd android/app/build/outputs/apk/release
+          test -f app-universal-release.apk
+          test -f app-arm64-v8a-release.apk
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --notes-file "$GITHUB_WORKSPACE/NOTES.md"
+          fi
+          gh release upload "$TAG" \
+            app-universal-release.apk#rotnt.apk \
+            app-arm64-v8a-release.apk#rotnt-arm64.apk \
+            --clobber
+          gh release view "$TAG"
