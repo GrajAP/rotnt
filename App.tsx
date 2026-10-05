@@ -4,6 +4,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -384,7 +385,7 @@ function StatusRow({ label, value, ok }: { label: string; value: string; ok: boo
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0d1117' },
-  scroll: { padding: 20, paddingBottom: 64, paddingTop: 32 },
+  scroll: { padding: 20, paddingBottom: 64, paddingTop: 24 + (RNStatusBar.currentHeight ?? 0) },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wordmark: { color: '#e6edf3', fontSize: 34, fontWeight: '800', letterSpacing: -0.5 },
   badge: {
