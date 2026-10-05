@@ -14,19 +14,29 @@ Dlatego rotn't ma trzy tryby i sam wykrywa, który jest możliwy:
 
 | | uprawnienia | nazwa sieci | internet u gościa | blokada gościa |
 |---|---|---|---|---|
-| **T0** | żadne | własna | nie (local-only hotspot) | nie |
-| **T1** | Shizuku | własna | tylko gdy telefon sam jest na Wi-Fi | nie |
-| **T2** | Magisk (root) | własna | tak | tak |
+| **T0** | żadne | ✗ Android nadaje własną | nie (local-only hotspot) | nie |
+| **T1** | Shizuku | ✓ własna | tylko gdy telefon sam jest na Wi-Fi | nie |
+| **T2** | Magisk (root) | ✓ własna | tak | tak |
 
 ### T0 — bez żadnych uprawnień
 
-`WifiManager.startLocalOnlyHotspot` to jedyne publiczne API pozwalające
-ustawić własną nazwę sieci. Gość widzi `rotnt · bez brainrotu` i hasło
-`nienawidzetiktoka` **zanim się połączy**. To jest główna wartość tego
-trybu — informacja zamiast kary.
+**Nazwy sieci nie da się ustawić.** To nie jest ograniczenie rotn't, tylko
+Androida. W publicznym SDK `SoftApConfiguration.Builder` ma dokładnie dwie
+metody: `setChannels` i `build`. `setWifiSsid` i `setPassphrase` są `@hide`,
+a klasy `WifiSsid` w ogóle nie ma w publicznym `android.jar`. Trzecia
+aplikacja nie może nazwać hotspota żadną ścieżką.
 
-Wada: taki hotspot nie ma dostępu do internetu. Goście widzą Twoją stronę,
-ale nie sieć. Działa jako manifest, nie jako hotspot.
+Jedyne publiczne przeciążenie to `startLocalOnlyHotspot(callback, handler)`,
+które ignoruje nazwę i pozwala Androidowi wybrać własną — w praktyce
+`AndroidShare_2626`. Aplikacja odczytuje faktycznie nadaną nazwę i
+pokazuje ją w statusie, zamiast udawać, że ustawiła Twoją.
+
+Co T0 realnie daje: uruchomiony hotspot, strona powitalna na 8080, zasady
+oraz link do instalacji rotn't dla gościa. Bez internetu dla gościa.
+Manifest informacyjny, nie bariera.
+
+Jeśli chcesz mieć własną nazwę bez roota: wpisz ją ręcznie w Ustawieniach
+w „Hotspot osobisty" (Android pozwala), albo daj Shizuku i T1.
 
 ### T1 — Shizuku, bez roota
 
@@ -71,6 +81,7 @@ zainstalowanie z nieznanych źródeł dla tej aplikacji.
  MITM, którego rotn't świadomie nie robi.
 - **Portal na 8080 łapie tylko Androida.** Gość z iOS, macOS i Windows
   sprawdza port 80, którego bez roota nie zajmiemy.
+- **Nie da się zmienić nazwy sieci bez Shizuku lub roota.** Powyżej dlaczego.
 - **Który interfejs to hotspot** jest zgadywane. Android nazywa go
   `wlan1`, `ap0`, `swlan0` lub `ap+wlan0` zależnie od wersji i producenta.
   Aplikacja czyta `ip addr` i ocenia kandydatów. Na nietypowym urządzeniu
