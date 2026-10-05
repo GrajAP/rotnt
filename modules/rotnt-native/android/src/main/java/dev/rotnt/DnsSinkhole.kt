@@ -25,7 +25,14 @@ class DnsSinkhole(private val ports: () -> Set<String>) {
 
   fun start() {
     if (!running.compareAndSet(false, true)) return
-    val s = DatagramSocket(5353)
+    val s = try {
+      DatagramSocket(5353)
+    } catch (t: Throwable) {
+      // A failed bind used to leave running=true with no thread behind it,
+      // which wedged every later start() into a permanent no-op.
+      running.set(false)
+      return
+    }
     s.reuseAddress = true
     socket = s
     thread = thread(name = "rotnt-dns", isDaemon = true) {

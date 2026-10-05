@@ -41,7 +41,24 @@ object Hotspot {
 
     val callback = object : WifiManager.LocalOnlyHotspotCallback() {
       override fun onStarted(reservation: WifiManager.LocalOnlyHotspotReservation) {
-        onReady(mapOf("ssid" to ssid, "iface" to "wlan0 (local-only)"))
+        // Hold the reservation. If it gets collected the hotspot is released
+        // and the network silently disappears from under the guest.
+        held = reservation
+
+        // Report the name the framework actually chose, not the one we asked
+        // for. Asking is pointless: SoftApConfiguration.Builder's setters for
+        // SSID and passphrase are @hide, so no public API can rename this
+        // hotspot. Renaming requires shell (Shizuku) or root.
+        @Suppress("DEPRECATION")
+        val actual = runCatching { reservation.softApConfiguration?.ssid }.getOrNull()
+
+        onReady(
+          mapOf(
+            "requestedSsid" to ssid,
+            "actualSsid" to actual,
+            "renamePossible" to false
+          )
+        )
       }
 
       override fun onFailed(reason: Int) {
@@ -49,7 +66,17 @@ object Hotspot {
       }
     }
 
+    // Only this overload is reachable from a third-party app. The
+    // configuration overload takes a SoftApConfiguration whose SSID and
+    // passphrase cannot be set without hidden API.
     wifi.startLocalOnlyHotspot(callback, handler)
+  }
+
+  @Volatile private var held: WifiManager.LocalOnlyHotspotReservation? = null
+
+  fun release() {
+    runCatching { held?.close() }
+    held = null
   }
 
   private fun describe(reason: Int): String = when (reason) {

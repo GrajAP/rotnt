@@ -41,6 +41,7 @@ export default function App() {
   const [log, setLog] = useState<Log[]>([]);
   const [hotspotNote, setHotspotNote] = useState<string | null>(null);
   const [permsGranted, setPermsGranted] = useState<boolean | null>(null);
+  const [actualSsid, setActualSsid] = useState<string | null>(null);
   const [shizukuBusy, setShizukuBusy] = useState(false);
 
   let logId = useMemo(() => ({ n: 0 }), []);
@@ -48,6 +49,9 @@ export default function App() {
   const say = useCallback((text: string, bad = false) => {
     logId.n += 1;
     const id = logId.n;
+    // Mirror into logcat too. State-only logging meant that anything the app
+    // reported was invisible over adb, so failures were impossible to diagnose.
+    console.log(`[rotnt] ${bad ? 'ERR ' : ''}${text}`);
     setLog((prev) => [{ id, text, bad }, ...prev].slice(0, 40));
   }, []);
 
@@ -127,15 +131,34 @@ export default function App() {
             : null
         );
       } else if (perms.granted) {
+        let locallyStarted = false;
         try {
-          const loh: any = await Rotnt.hotspotStartLocalOnly(ssid, pass);
-          say(`hotspot local-only: ${loh?.ssid ?? 'uruchomiony'}`);
-          setHotspotNote(
-            'Local-only: goscie widza ta nazwe i strone, ale nie ma internetu. To jedyna sciezka bez uprawnien.'
-          );
+          const loh: any = await Promise.race([
+            Rotnt.hotspotStartLocalOnly(ssid, pass),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('timeout 15s')), 15000)
+            ),
+          ]).then((v: any) => ((locallyStarted = true), v));
+
+          const actual = loh?.actualSsid;
+          setActualSsid(actual ?? null);
+          if (actual && actual !== ssid) {
+            say(`hotspot wystartowal, ale Android dal mu nazwe "${actual}"`);
+            setHotspotNote(
+              `Android wybral nazwe sam: "${actual}". Zmienic jej nie da sie bez Shizuku lub roota — ` +
+              `setWifiSsid w SoftApConfiguration jest ukrytym API. Zmien nazwe recznie w Ustawieniach, ` +
+              `albo daj Shizuku, zeby rotnt przejal hotspot.`
+            );
+          } else {
+            say(`hotspot local-only: ${actual ?? 'uruchomiony'}`);
+            setHotspotNote('Local-only: goscie widza strone, ale nie ma internetu.');
+          }
         } catch (e: any) {
           say(`local-only hotspot odrzucony: ${e?.message ?? e}`, true);
           setHotspotNote(null);
+        }
+        if (!locallyStarted) {
+          say('hotspot nie odpowiedzial w 15s', true);
         }
       } else {
         say('pomijam naziwywanie sieci: brak uprawnienia Wi-Fi', true);
@@ -256,6 +279,9 @@ export default function App() {
 
         <Section title="Stan">
           <StatusRow label="strona powitalna (8080)" value={portalUp ? 'aktywna' : 'wylaczona'} ok={portalUp} />
+          {actualSsid && (
+            <StatusRow label="nazwa sieci w telefonie" value={actualSsid} ok={actualSsid === ssid} />
+          )}
           <StatusRow
             label="bariera dla gosci"
             value={armed ? `aktywna na ${iface}` : tier === 'root' ? 'wylaczona' : 'wymaga roota'}

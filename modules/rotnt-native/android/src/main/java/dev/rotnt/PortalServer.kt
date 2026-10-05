@@ -6,6 +6,7 @@ import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -22,7 +23,13 @@ class PortalServer {
   private val running = AtomicBoolean(false)
   private var server: ServerSocket? = null
   private var acceptThread: Thread? = null
-  private val pool = Executors.newFixedThreadPool(8)
+
+  // Rebuilt on every start. Holding one pool for the lifetime of the object
+  // meant the second start() inherited the pool that stop() had already
+  // shut down: every accepted socket was rejected, so the socket stayed bound
+  // and listening while nobody ever answered, and guests hung instead of
+  // getting a page.
+  @Volatile private var pool: ExecutorService? = null
 
   @Volatile private var config: JSONObject = JSONObject()
 
@@ -34,11 +41,13 @@ class PortalServer {
       val socket = ServerSocket(port, 32)
       socket.reuseAddress = true
       server = socket
+      val workers = Executors.newFixedThreadPool(8)
+      pool = workers
       acceptThread = thread(name = "rotnt-portal", isDaemon = true) {
         while (running.get() && !socket.isClosed) {
           try {
             val client = socket.accept()
-            pool.execute { handle(client) }
+            workers.execute { handle(client) }
           } catch (t: Throwable) {
             if (!running.get()) break
           }
@@ -47,6 +56,8 @@ class PortalServer {
       mapOf("ok" to true, "port" to port)
     } catch (t: Throwable) {
       running.set(false)
+      pool?.shutdownNow()
+      pool = null
       mapOf("ok" to false, "error" to (t.message ?: "bind failed"))
     }
   }
@@ -56,7 +67,8 @@ class PortalServer {
     runCatching { server?.close() }
     server = null
     acceptThread = null
-    pool.shutdownNow()
+    pool?.shutdownNow()
+    pool = null
     return mapOf("ok" to true)
   }
 
