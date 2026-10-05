@@ -57,8 +57,9 @@ jobs:
           ./gradlew :app:assembleRelease --no-daemon
           ls -la app/build/outputs/apk/release/*.apk
 
-      # gh handles the "file#asset-name" syntax; softprops/action-gh-release
-      # does not, and silently matches nothing against the '#'.
+      # Neither softprops/action-gh-release nor `gh release upload` renames assets
+      # from a "file#name" pattern, so rename on disk first. The download URL in
+      # the app and the README both point at releases/latest/download/rotnt.apk.
       - name: Publish to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,11 +69,10 @@ jobs:
           cd android/app/build/outputs/apk/release
           test -f app-universal-release.apk
           test -f app-arm64-v8a-release.apk
+          mv app-universal-release.apk rotnt.apk
+          mv app-arm64-v8a-release.apk rotnt-arm64.apk
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "$TAG" --notes-file "$GITHUB_WORKSPACE/NOTES.md"
           fi
-          gh release upload "$TAG" \
-            app-universal-release.apk#rotnt.apk \
-            app-arm64-v8a-release.apk#rotnt-arm64.apk \
-            --clobber
+          gh release upload "$TAG" rotnt.apk rotnt-arm64.apk --clobber
           gh release view "$TAG"
