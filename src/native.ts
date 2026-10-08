@@ -15,6 +15,8 @@ const stub = {
     canBlockGuests: false,
     rootAvailable: false,
     shizukuGranted: false,
+    shizukuInstalled: false,
+    shizukuRunning: false,
     sdkInt: 0,
   }),
   runCommand: async () => ({ code: 126, out: 'unavailable' }),
@@ -51,13 +53,17 @@ export const Rotnt: Any =
     get: (target, prop) => (target as Any)[prop],
   });
 
-export async function capabilities(): Promise<{
+export type Caps = {
   tier: 'none' | 'shell' | 'root';
   canNameHotspot: boolean;
   canBlockGuests: boolean;
   rootAvailable: boolean;
   shizukuGranted: boolean;
+  shizukuInstalled: boolean;
+  shizukuRunning: boolean;
   sdkInt: number;
-}> {
+};
+
+export async function capabilities(): Promise<Caps> {
   return Rotnt.capabilities();
 }

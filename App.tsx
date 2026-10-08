@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Linking } from 'react-native';
 import { Rotnt, capabilities, isAvailable } from './src/native';
 import { ensureHotspotPermissions } from './src/permissions';
 import {
@@ -324,6 +325,86 @@ export default function App() {
           </Section>
         )}
 
+        {caps && tier === 'none' && (
+          <View style={s.need}>
+            <Text style={s.needTitle}>rotnt nie ma czym dzialac</Text>
+            <Text style={s.needBody}>
+              Android nie pozwala zwyklym aplikacjom nazwac hotspota ani blokowac gosci.
+              Do tego potrzebne jest jedno z dwoch:
+            </Text>
+
+            {caps.shizukuInstalled ? (
+              caps.shizukuRunning ? (
+                <>
+                  <Text style={s.needBody}>
+                    Shizuku jest zainstalowany i dziala, ale nie przyznal jeszcze uprawnien.
+                  </Text>
+                  <Pressable onPress={askShizuku} style={s.needBtn}>
+                    <Text style={s.needBtnText}>przyznaj Shizuku</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Text style={s.needBody}>
+                    Shizuku jest zainstalowany, ale nie jest uruchomiony. Otworz go i wybierz
+                    „uruchom przez debugowanie bezprzewodowe", potem wroc tu.
+                  </Text>
+                  <Pressable
+                    onPress={() => Linking.openURL('moe.shizuku.privileged.api://')}
+                    style={s.needBtn}
+                  >
+                    <Text style={s.needBtnText}>otworz Shizuku</Text>
+                  </Pressable>
+                </>
+              )
+            ) : (
+              <>
+                <Text style={s.needBody}>
+                  Zalecane: <Text style={s.needStrong}>Shizuku</Text> — bez roota, 5 minut,
+                  wystarczy do nadania nazwy sieci.
+                </Text>
+                <Pressable
+                  onPress={() => Linking.openURL('https://shizuku.dev')}
+                  style={s.needBtn}
+                >
+                  <Text style={s.needBtnText}>jak zainstalowac Shizuku</Text>
+                </Pressable>
+                <Text style={[s.needBody, { marginTop: 14 }]}>
+                  Pelna bariera (blokowanie TikToka u gosci) wymaga Magiska — roota.
+                </Text>
+                <Pressable
+                  onPress={() => Linking.openURL('https://topjohnwu.github.io/Magisk/')}
+                  style={[s.needBtn, s.needBtnGhost]}
+                >
+                  <Text style={[s.needBtnText, { color: '#d29922' }]}>jak zrootowac (Magisk)</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
+
+        {caps && tier === 'root' && (
+          <View style={s.need}>
+            <Text style={s.needTitle}>root wykryty</Text>
+            <Text style={s.needBody}>
+              rotnt przejmie Twoj hotspot: wlasna nazwa, internet dla gosci i blokada
+              zablokowanych domen. Wcisniecie „włącz rotnt" to zgoda na to wszystko —
+              regulki iptables zdejmuje przy wyłączaniu.
+            </Text>
+          </View>
+        )}
+
+        {caps && tier === 'shell' && (
+          <View style={s.need}>
+            <Text style={s.needTitle}>Shizuku dziala</Text>
+            <Text style={s.needBody}>
+              rotnt nadam wlasna nazwe Twojemu hotspotowi. Uwaga: ta sciezka nie wlacza
+              udostepniania internetu gosciom — to ograniczenie Androida, nie aplikacji.
+              Pelna bariera wymaga Magiska.
+            </Text>
+          </View>
+        )}
+
         <Section title="Reguly">
           {RULES.map((r) => (
             <View key={r.name} style={[s.rule, !r.blocked && s.ruleOn]}>
@@ -500,6 +581,26 @@ const s = StyleSheet.create({
   ruleMarkOn: { color: '#3fb950' },
   ruleName: { color: '#e6edf3', fontSize: 14, fontWeight: '600', flex: 1 },
   ruleWhy: { color: '#6e7681', fontSize: 12, maxWidth: '50%', textAlign: 'right' },
+  need: {
+    backgroundColor: '#161b22',
+    borderWidth: 1,
+    borderColor: '#30363d',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 22,
+  },
+  needTitle: { color: '#e6edf3', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  needBody: { color: '#adbac7', fontSize: 13, lineHeight: 19, marginBottom: 4 },
+  needStrong: { color: '#e6edf3', fontWeight: '700' },
+  needBtn: {
+    marginTop: 12,
+    backgroundColor: '#238636',
+    borderRadius: 8,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  needBtnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#30363d' },
+  needBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
   smallBtn: {
     marginTop: 14,
     backgroundColor: '#21262d',

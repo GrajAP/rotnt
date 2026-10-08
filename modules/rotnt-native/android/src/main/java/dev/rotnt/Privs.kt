@@ -70,6 +70,23 @@ object Privs {
     false
   }
 
+  /**
+   * "Not installed" and "installed but not granted" need different prompts, so
+   * ask PackageManager rather than inferring from a dead binder.
+   */
+  fun shizukuInstalled(context: android.content.Context): Boolean {
+    val pm = context.packageManager
+    val candidates = listOf("rikka.shizuku", "moe.shizuku.privileged.api")
+    return candidates.any { name ->
+      runCatching {
+        pm.getPackageInfo(name, 0)
+        true
+      }.getOrElse { pm.getLaunchIntentForPackage(name) != null }
+    }
+  }
+
+  fun shizukuRunning(): Boolean = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+
   fun tier(): Tier = when {
     isRootAvailable() -> Tier.Root
     shizukuGranted() -> Tier.Shell

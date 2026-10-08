@@ -18,12 +18,15 @@ class RotntModule : Module() {
 
     AsyncFunction("capabilities") {
       val tier = Privs.tier()
+      val ctx = appContext.reactContext
       mapOf(
         "tier" to tier.name,
         "canNameHotspot" to tier.canNameHotspot,
         "canBlockGuests" to tier.canBlockGuests,
         "rootAvailable" to Privs.isRootAvailable(),
         "shizukuGranted" to Privs.shizukuGranted(),
+        "shizukuInstalled" to (ctx?.let { Privs.shizukuInstalled(it) } ?: false),
+        "shizukuRunning" to Privs.shizukuRunning(),
         "sdkInt" to Privs.sdkInt()
       )
     }
