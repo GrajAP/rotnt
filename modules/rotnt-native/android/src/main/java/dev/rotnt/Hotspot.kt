@@ -82,7 +82,10 @@ object Hotspot {
   private fun describe(reason: Int): String = when (reason) {
     WifiManager.LocalOnlyHotspotCallback.ERROR_NO_CHANNEL -> "brak wolnego kanału Wi-Fi"
     WifiManager.LocalOnlyHotspotCallback.ERROR_GENERIC -> "błąd systemu przy starcie hotspotu"
-    WifiManager.LocalOnlyHotspotCallback.ERROR_INCOMPATIBLE_MODE -> "tryb jest niekompatybilny (wyłącz lokalny hotspot w Ustawieniach)"
+    WifiManager.LocalOnlyHotspotCallback.ERROR_INCOMPATIBLE_MODE ->
+      "Android odmowil startu, bo juz dziala systemowy Hotspot osobisty. " +
+      "Zablokuj go w Ustawieniach (Hotspot osobisty -> wylacz) albo daj Shizuku, " +
+      "zeby rotnt przejal hotspot przez shell."
     WifiManager.LocalOnlyHotspotCallback.ERROR_TETHERING_DISALLOWED -> "system blokuje tethering dla tej aplikacji"
     else -> "nieznany błąd: $reason"
   }

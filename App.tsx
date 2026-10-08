@@ -130,7 +130,7 @@ export default function App() {
             ? 'Uwaga: tryb shell nie wlacza udostepniania internetu. Dziala, gdy telefon sam jest na Wi-Fi.'
             : null
         );
-      } else if (perms.granted) {
+} else if (perms.granted) {
         let locallyStarted = false;
         try {
           const loh: any = await Promise.race([
