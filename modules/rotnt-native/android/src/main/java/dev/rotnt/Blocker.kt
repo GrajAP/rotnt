@@ -75,9 +75,18 @@ object Blocker {
     run("iptables -F $FILTER_CHAIN", log, allowFailure = true)
 
     // Guest DNS -> our sinkhole. PREROUTING so this happens before the
-    // hotspot's own dnsmasq ever gets to answer.
-    run("iptables -t nat -A $NAT_CHAIN -p udp --dport 53 -j REDIRECT --to-port $DNS_PORT", log)
+    // hotspot's own dnsmasq ever gets to answer. Scoped to the hotspot
+    // interface so the uplink is never touched.
+    run("iptables -t nat -A $NAT_CHAIN -i $iface -p udp --dport 53 -j REDIRECT --to-port $DNS_PORT", log)
     run("iptables -t nat -A PREROUTING -i $iface -j $NAT_CHAIN", log)
+
+    // Captive-portal probes are plain HTTP by design. Hijacked probe hosts
+    // resolve to the gateway (see DnsSinkhole portal hosts), so the only
+    // traffic arriving at gateway:80 is the OS connectivity check plus guests
+    // typing the gateway IP by hand. Redirecting it to the portal is what
+    // makes the "sign in to this network" sheet pop with our rules. Regular
+    // browsing resolves normally and is unaffected.
+    run("iptables -t nat -A $NAT_CHAIN -i $iface -p tcp --dport 80 -j REDIRECT --to-port 8080", log)
 
     // Our own answers are never truncated, so nothing legitimately needs TCP DNS;
     // dropping it stops the obvious bypass. 853 is DNS-over-TLS.
@@ -95,7 +104,7 @@ object Blocker {
       run("iptables -A OUTPUT -p tcp --dport 853 -j DROP", log)
     }
 
-    run("net.ipv4.ip_forward=1", log, allowFailure = true)
+    run("sysctl -w net.ipv4.ip_forward=1", log, allowFailure = true)
     return log.toString()
   }
 

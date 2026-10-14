@@ -12,11 +12,11 @@ zewnętrznym adresem jest link do pobrania tej aplikacji.
 Android daje aplikacji innej niż systemowa bardzo mało władzy nad hotspotem.
 Dlatego rotn't ma trzy tryby i sam wykrywa, który jest możliwy:
 
-| | uprawnienia | nazwa sieci | internet u gościa | blokada gościa |
-|---|---|---|---|---|
-| **T0** | żadne | ✗ Android nadaje własną | nie (local-only hotspot) | nie |
-| **T1** | Shizuku | ✓ własna | tylko gdy telefon sam jest na Wi-Fi | nie |
-| **T2** | Magisk (root) | ✓ własna | tak | tak |
+| | uprawnienia | nazwa sieci | internet u gościa | blokada gościa | blokada u siebie |
+|---|---|---|---|---|---|
+| **T0** | żadne | ✗ Android nadaje własną | nie (local-only hotspot) | nie | ✓ lokalny VPN |
+| **T1** | Shizuku | ✓ własna | tylko gdy telefon sam jest na Wi-Fi | nie | ✓ lokalny VPN |
+| **T2** | Magisk (root) | ✓ własna | tak | tak | ✓ lokalny VPN |
 
 ### T0 — bez żadnych uprawnień
 
@@ -57,6 +57,16 @@ w aplikacji, który zwraca `0.0.0.0` dla zablokowanych domen. Reguły iptables
 siedzą w osobnej łańcuchu (`ROTNT`), więc zdejmowanie bariery to jedno
 usunięcie i nic nie zostaje w połowie zmienione.
 
+### Ochrona własnego telefonu (działa bez roota)
+
+Lokalny filtr VPN (`SelfVpnService`): tunel prowadzi tylko zapytania DNS do
+fałszywego serwera `10.0.0.2`, reszta ruchu idzie wprost fizycznym interfejsem,
+więc nie ma tunelowania całego internetu ani kary dla baterii i prędkości.
+Zablokowane domeny dostają `0.0.0.0`, reszta jest przekazywana do upstream
+bez zmian. Włączenie wymaga jednorazowej zgody systemowej na VPN (okno
+Androida, nie nasze) — tak samo jak Blokada czy Rethink. Zero MITM, zero
+podglądania treści: poza pytaniem DNS nic nie jest czytane.
+
 ## Instalacja
 
 APK jest podpisany kluczem, którego nie ma w repo. Nie jest w Google Play,
@@ -76,11 +86,17 @@ zainstalowanie z nieznanych źródeł dla tej aplikacji.
 - **Bez roota nie da się zablokować gościa.** To nie jest bug w rotn't —
   `VpnService` przechwytuje ruch tylko z urządzeń, które same uruchomiły apkę.
   Pakiety klientów tetheringu idą z `wlan0` przez NAT i do VpnService nie trafiają.
-- **DNS-over-HTTPS działa.** Blokada po domenie nie widzi ruchu zaszytego
-  w TLS na porcie 443. To dziura, nie rozwiązanie. Wykrywanie DoH wymaga
- MITM, którego rotn't świadomie nie robi.
-- **Portal na 8080 łapie tylko Androida.** Gość z iOS, macOS i Windows
-  sprawdza port 80, którego bez roota nie zajmiemy.
+  Własny telefon chroni lokalny VPN (działa bez roota); gość bez roota musi
+  zainstalować rotn't u siebie — do tego służy strona powitalna.
+- **DNS-over-HTTPS i Prywatny DNS (DoT) omijają każdy filtr DNS z definicji.**
+  Aplikacja ostrzega, gdy Prywatny DNS nie jest wyłączony (Ustawienia → Sieć →
+  Prywatny DNS → Wyłączony). Wykrywanie DoH wymagałoby MITM, którego rotn't
+  świadomie nie robi.
+- **Portal na 8080 łapie tylko Androida — bez roota.** Z rootem sondy
+  captive-portal (`connectivitycheck.*`, `captive.apple.com`, `msftconnecttest*`
+  i inne) są kierowane na bramkę, a port 80 gości na 8080, więc goście z każdego
+  systemu dostają automatycznie okienko z zasadami. Bez roota gość musi otworzyć
+  adres ręcznie — aplikacja pokazuje go wprost (`http://<adres-hotspota>:8080`).
 - **Nie da się zmienić nazwy sieci bez Shizuku lub roota.** Powyżej dlaczego.
 - **Który interfejs to hotspot** jest zgadywane. Android nazywa go
   `wlan1`, `ap0`, `swlan0` lub `ap+wlan0` zależnie od wersji i producenta.
@@ -132,7 +148,9 @@ App.tsx                        interfejs
 src/policy.ts                  lista domen i etykiety trybów
 modules/rotnt-native/          moduł natywny (Kotlin)
   Privs.kt                     root / Shizuku / uid shell
-  DnsSinkhole.kt               serwer DNS blokujący
+  DnsLogic.kt                  czysta logika DNS (blokada + portal + forward, testy JVM)
+  DnsSinkhole.kt               serwer DNS blokujący (ścieżka root dla gości)
+  SelfVpnService.kt            lokalny filtr VPN (ochrona własnego telefonu bez roota)
   Blocker.kt                   iptables + wykrywanie interfejsu
   PortalServer.kt              serwer HTTP na 8080
   Hotspot.kt                   uruchamianie softapu

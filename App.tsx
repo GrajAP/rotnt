@@ -44,6 +44,14 @@ export default function App() {
   const [permsGranted, setPermsGranted] = useState<boolean | null>(null);
   const [actualSsid, setActualSsid] = useState<string | null>(null);
   const [shizukuBusy, setShizukuBusy] = useState(false);
+  const [guestUrl, setGuestUrl] = useState<string | null>(null);
+
+  // Self protection (no-root local VPN DNS filter).
+  const [vpnRunning, setVpnRunning] = useState(false);
+  const [vpnBusy, setVpnBusy] = useState(false);
+  const [vpnHits, setVpnHits] = useState<Record<string, number>>({});
+  const [needsVpnConsent, setNeedsVpnConsent] = useState(false);
+  const [privateDns, setPrivateDns] = useState<string | null>(null);
 
   let logId = useMemo(() => ({ n: 0 }), []);
 
@@ -64,6 +72,8 @@ export default function App() {
 
   useEffect(() => {
     refreshCaps();
+    refreshVpn();
+    Rotnt.privateDnsMode().then((m: any) => setPrivateDns(m?.mode ?? null));
     Rotnt.blockerStatus().then((s: any) => {
       setArmed(!!s?.armed);
       setIface(s?.interface ?? null);
@@ -71,6 +81,78 @@ export default function App() {
     });
     Rotnt.portalStatus().then((s: any) => setPortalUp(!!s?.running));
   }, [refreshCaps]);
+
+  const refreshVpn = useCallback(async () => {
+    try {
+      const s: any = await Rotnt.vpnStatus();
+      setVpnRunning(!!s?.running);
+      setVpnHits(s?.hits ?? {});
+    } catch {
+      // native module missing (Expo Go): stub reports stopped, UI stays honest
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(refreshVpn, 3000);
+    return () => clearInterval(t);
+  }, [refreshVpn]);
+
+  async function toggleVpn() {
+    if (vpnRunning) {
+      setVpnBusy(true);
+      try {
+        await Rotnt.vpnStop();
+        say('ochrona tego telefonu wylaczona');
+      } finally {
+        setVpnBusy(false);
+        refreshVpn();
+      }
+      return;
+    }
+    setVpnBusy(true);
+    try {
+      const prep: any = await Rotnt.vpnPrepare();
+      if (prep?.needsConsent) {
+        setNeedsVpnConsent(true);
+        say('system musi wyrazic zgode na VPN - nacisnij przycisk zgody', true);
+        return;
+      }
+      const res: any = await Rotnt.vpnStart(TIKTOK_DOMAINS);
+      if (res?.ok) {
+        setNeedsVpnConsent(false);
+        say(`ochrona tego telefonu wlaczona (${TIKTOK_DOMAINS.length} domen)`);
+      } else if (res?.reason === 'consent-required') {
+        setNeedsVpnConsent(true);
+      } else {
+        say(`VPN: ${res?.reason ?? 'blad'}`, true);
+      }
+    } finally {
+      setVpnBusy(false);
+      refreshVpn();
+    }
+  }
+
+  async function grantVpnConsent() {
+    setVpnBusy(true);
+    try {
+      await Rotnt.vpnOpenConsent();
+      // The system dialog is asynchronous; poll until the grant lands.
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const prep: any = await Rotnt.vpnPrepare();
+        if (!prep?.needsConsent) {
+          setNeedsVpnConsent(false);
+          const res: any = await Rotnt.vpnStart(TIKTOK_DOMAINS);
+          say(res?.ok ? 'ochrona tego telefonu wlaczona' : `VPN: ${res?.reason ?? 'blad'}`, !res?.ok);
+          return;
+        }
+      }
+      say('zgoda nadal nieprzyznana - odrzucono dialog?', true);
+    } finally {
+      setVpnBusy(false);
+      refreshVpn();
+    }
+  }
 
   const poll = useCallback(async () => {
     const s: any = await Rotnt.blockerStatus();
@@ -110,6 +192,13 @@ export default function App() {
       const portal: any = await Rotnt.portalStart(8080, portalConfig);
       setPortalUp(!!portal?.ok);
       say(portal?.ok ? `portal slucha na 8080` : `portal: ${portal?.error ?? 'blad'}`, !portal?.ok);
+      try {
+        const hs: any = await Rotnt.hotspotStatus();
+        const addr = hs?.hotspotAddress ?? null;
+        setGuestUrl(addr ? `http://${addr}:8080` : portal?.ok ? 'http://<adres-hotspota>:8080' : null);
+      } catch {
+        setGuestUrl(portal?.ok ? 'http://<adres-hotspota>:8080' : null);
+      }
 
       const perms = await ensureHotspotPermissions();
       setPermsGranted(perms.granted);
@@ -217,6 +306,7 @@ export default function App() {
       await Rotnt.portalStop();
       setPortalUp(false);
       setOn(false);
+      setGuestUrl(null);
       const hs: any = await Rotnt.hotspotStopViaShell();
       if (hs?.ok) say('hotspot wylaczony');
       await poll();
@@ -227,6 +317,7 @@ export default function App() {
 
   const tier = caps?.tier ?? 'none';
   const totalHits = Object.values(hits).reduce((a, b) => a + b, 0);
+  const vpnTotalHits = Object.values(vpnHits).reduce((a, b) => a + b, 0);
 
   return (
     <View style={s.root}>
@@ -249,6 +340,42 @@ export default function App() {
             </Text>
           </View>
         )}
+
+        <Section title="Ten telefon (bez roota)">
+          <StatusRow
+            label="blokada TikToka"
+            value={vpnRunning ? 'wlaczona' : 'wylaczona'}
+            ok={vpnRunning}
+          />
+          {vpnTotalHits > 0 && (
+            <StatusRow label="zablokowane zapytania" value={String(vpnTotalHits)} ok={false} />
+          )}
+          {privateDns != null && privateDns !== 'off' && (
+            <Text style={s.note}>
+              Prywatny DNS ({privateDns}) omija kazdy lokalny filtr. Wylacz go w Ustawieniach
+              (Siec → Prywatny DNS → Wylaczony), inaczej TikTok bedzie przechodzil bokiem.
+            </Text>
+          )}
+          <Pressable
+            onPress={needsVpnConsent ? grantVpnConsent : toggleVpn}
+            disabled={vpnBusy}
+            style={({ pressed }) => [s.smallBtn, pressed && { opacity: 0.8 }, vpnBusy && { opacity: 0.6 }]}
+          >
+            {vpnBusy ? (
+              <ActivityIndicator color="#e6edf3" />
+            ) : (
+              <Text style={s.smallBtnText}>
+                {vpnRunning ? 'wylacz ochrone telefonu' : needsVpnConsent ? 'wyraz zgode systemowa na VPN' : 'wlacz ochrone telefonu'}
+              </Text>
+            )}
+          </Pressable>
+          {needsVpnConsent && !vpnRunning && (
+            <Text style={s.hint}>
+              Android zapyta osobnym oknem systemowym. Bez tej zgody zadna aplikacja nie moze
+              filtrowac ruchu — to wymog systemu, nie nasz kaprys.
+            </Text>
+          )}
+        </Section>
 
         <Section title="Nazwa sieci">
           <Field label="SSID" value={ssid} onChangeText={setSsid} />
@@ -280,6 +407,16 @@ export default function App() {
 
         <Section title="Stan">
           <StatusRow label="strona powitalna (8080)" value={portalUp ? 'aktywna' : 'wylaczona'} ok={portalUp} />
+          {guestUrl && (
+            <StatusRow label="adres dla gosci" value={guestUrl} ok={portalUp} />
+          )}
+          {on && guestUrl && (
+            <Text style={s.hint}>
+              {tier === 'root'
+                ? 'Goscie dostana automatycznie okienko z zasadami i linkiem do instalacji.'
+                : 'Bez roota Android nie pokaze goscia automatycznie okienka — podyktuj mu ten adres albo pokaz ekran.'}
+            </Text>
+          )}
           {actualSsid && (
             <StatusRow label="nazwa sieci w telefonie" value={actualSsid} ok={actualSsid === ssid} />
           )}

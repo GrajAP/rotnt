@@ -90,10 +90,17 @@ class PortalServer {
       when {
         path == "/health" -> respondText(output, 200, "ok")
         path == "/generate_204" ||
+          path == "/generate204" ||
           path == "/gen_204" ||
           path == "/hotspot-detect.html" ||
           path == "/canonical.html" ||
-          path == "/success.txt" -> redirect(output, "/")
+          path == "/success.txt" ||
+          path == "/connecttest.txt" ||
+          path == "/redirect" ||
+          path == "/ncsi.txt" ||
+          path == "/wifistub.html" ||
+          path == "/kindle-wifi/wifistub.html" ||
+          path == "/library/test/success.html" -> redirect(output, "/")
         else -> respondHtml(output, 200, render())
       }
     }

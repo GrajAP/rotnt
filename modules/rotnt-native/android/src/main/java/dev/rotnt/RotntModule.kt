@@ -1,5 +1,8 @@
 package dev.rotnt
 
+import android.content.Intent
+import android.net.VpnService
+import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
@@ -94,6 +97,9 @@ class RotntModule : Module() {
       }
 
       sinkhole.start()
+      // Captive-portal probe hosts resolve to the gateway so guests get the
+      // rules page automatically. Cleared again on disarm.
+      sinkhole.setPortal(iface.address)
       val log = Blocker.arm(iface.name, self)
       armedIface = iface.name
 
@@ -110,6 +116,7 @@ class RotntModule : Module() {
     AsyncFunction("blockerDisarm") {
       val log = Blocker.disarm(armedIface, blockSelf)
       sinkhole.stop()
+      sinkhole.setPortal(null)
       val was = armedIface
       armedIface = null
       mapOf("ok" to true, "interface" to was, "log" to log.take(2000))
@@ -130,6 +137,87 @@ class RotntModule : Module() {
 
     AsyncFunction("interfaces") {
       Blocker.detectInterfaces().map { mapOf("name" to it.name, "address" to it.address, "up" to it.isUp) }
+    }
+
+    // --- self protection (no root: local VPN DNS filter) --------------------
+
+    AsyncFunction("vpnPrepare") {
+      val ctx = appContext.reactContext
+        ?: return@AsyncFunction mapOf("needsConsent" to true, "reason" to "brak kontekstu")
+      mapOf("needsConsent" to (VpnService.prepare(ctx) != null))
+    }
+
+    // The system VPN dialog must be started from an activity context flow.
+    // We fire it and let JS poll vpnPrepare: once it returns needsConsent=false
+    // the user has granted (or the grant already existed).
+    AsyncFunction("vpnOpenConsent") {
+      val ctx = appContext.reactContext
+        ?: return@AsyncFunction mapOf("ok" to false, "reason" to "brak kontekstu")
+      val intent = VpnService.prepare(ctx)
+        ?: return@AsyncFunction mapOf("ok" to true, "already" to true)
+      return@AsyncFunction try {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(intent)
+        mapOf("ok" to true, "already" to false)
+      } catch (t: Throwable) {
+        mapOf("ok" to false, "reason" to (t.message ?: "nie udalo sie otworzyc zgody"))
+      }
+    }
+
+    AsyncFunction("vpnStart") { domains: List<String> ->
+      val ctx = appContext.reactContext
+        ?: return@AsyncFunction mapOf("ok" to false, "reason" to "brak kontekstu")
+      if (VpnService.prepare(ctx) != null) {
+        return@AsyncFunction mapOf("ok" to false, "reason" to "consent-required")
+      }
+      SelfVpnService.domains = domains.map { it.lowercase().trim() }
+        .filter { it.isNotBlank() }.toSet()
+      SelfVpnService.resetHits()
+      return@AsyncFunction try {
+        val intent = Intent(ctx, SelfVpnService::class.java)
+          .setAction(SelfVpnService.ACTION_START)
+        ctx.startService(intent)
+        mapOf("ok" to true)
+      } catch (t: Throwable) {
+        mapOf("ok" to false, "reason" to (t.message ?: "nie udalo sie wlaczyc VPN"))
+      }
+    }
+
+    AsyncFunction("vpnStop") {
+      val ctx = appContext.reactContext
+      if (ctx != null) {
+        runCatching {
+          ctx.startService(
+            Intent(ctx, SelfVpnService::class.java).setAction(SelfVpnService.ACTION_STOP)
+          )
+        }
+      } else {
+        SelfVpnService.domains = emptySet()
+      }
+      mapOf("ok" to true)
+    }
+
+    AsyncFunction("vpnStatus") {
+      mapOf(
+        "running" to SelfVpnService.running,
+        "hits" to SelfVpnService.snapshotHits(),
+        "domains" to SelfVpnService.domains.size
+      )
+    }
+
+    // Private DNS (DoT) bypasses every local DNS filter by design. The app
+    // cannot read or change it silently; it can only warn.
+    AsyncFunction("privateDnsMode") {
+      val ctx = appContext.reactContext
+      val mode = ctx?.let {
+        runCatching {
+          // Literal key, not Settings.Global.PRIVATE_DNS_MODE: the constant
+          // is missing from stripped platform stubs, the wire value
+          // "private_dns_mode" is stable since API 28.
+          Settings.Global.getString(it.contentResolver, "private_dns_mode")
+        }.getOrNull()
+      }
+      mapOf("mode" to mode)
     }
 
     // --- hotspot ----------------------------------------------------------

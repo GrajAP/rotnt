@@ -18,4 +18,17 @@ dependencies {
   implementation 'com.facebook.react:react-android'
   implementation 'dev.rikka.shizuku:api:13.1.5'
   implementation 'dev.rikka.shizuku:provider:13.1.5'
+  testImplementation 'junit:junit:4.13.2'
+}
+
+// The Kotlin unit-test output directory is not on the test runtime classpath
+// in this Expo module setup (test task fails with ClassNotFoundException for
+// the test class itself). Applied in afterEvaluate so it runs after AGP has
+// created the test tasks and set their classpath.
+afterEvaluate {
+  tasks.withType(Test).configureEach {
+    def v = name.toLowerCase().contains('release') ? 'release' : 'debug'
+    testClassesDirs += files(layout.buildDirectory.dir("tmp/kotlin-classes/${v}UnitTest"))
+    classpath += files(layout.buildDirectory.dir("tmp/kotlin-classes/${v}"))
+  }
 }
